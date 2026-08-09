@@ -1,0 +1,29 @@
+server:
+  address:     ":8005"
+  openapiPath: "/api.json"
+  swaggerPath: "/swagger"
+
+logger:
+  level: "all"
+  stdout: true
+
+database:
+  default:
+    link: "pgsql:postgres:654321@tcp(127.0.0.1:5432)/my_storage?sslmode=disable"
+
+security:
+  admin_token: "change-me-with-openssl-rand-hex-32"
+
+minio:
+  endpoint: "127.0.0.1:19000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin123"
+  bucket: "my-storage"
+  use_ssl: false
+  public_base: "http://127.0.0.1:19000"
+  presign_expire_sec: 7200
+
+storage:
+  default_biz: "common"
+  default_quota_bytes: 10737418240  # 10GiB
+  default_quota_files: 100000
