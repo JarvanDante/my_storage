@@ -1,2 +1,4 @@
-# my_storage
-统一存储
+# GoFrame Template For SingleRepo
+
+Quick Start: 
+- https://goframe.org/quick
