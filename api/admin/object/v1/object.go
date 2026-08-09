@@ -110,3 +110,20 @@ type QuotaRes struct {
 	MaxFiles  int64  `json:"max_files"`
 	UsedFiles int64  `json:"used_files"`
 }
+
+// UploadReq 总后台直传（服务端写入 MinIO，避免浏览器预签名签名问题）
+type UploadReq struct {
+	g.Meta   `path:"/admin/objects/upload" method:"post" mime:"multipart/form-data" tags:"Admin/Object" summary:"服务端代传上传"`
+	AppKey   string `json:"app_key" form:"app_key"`
+	SiteCode string `json:"site_code" form:"site_code" v:"required#site_code必填"`
+	Biz      string `json:"biz" form:"biz"`
+	Remark   string `json:"remark" form:"remark"`
+}
+
+type UploadRes struct {
+	Id        string `json:"id"`
+	Status    int    `json:"status"`
+	SizeBytes int64  `json:"size_bytes"`
+	PublicUrl string `json:"public_url"`
+	Filename  string `json:"filename"`
+}

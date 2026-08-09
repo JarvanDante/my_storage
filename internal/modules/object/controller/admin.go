@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gogf/gf/v2/errors/gerror"
+	"github.com/gogf/gf/v2/frame/g"
 
 	v1 "github.com/JarvanDante/my_storage/api/admin/object/v1"
 	"github.com/JarvanDante/my_storage/internal/modules/object/domain"
@@ -58,6 +59,31 @@ func (c *Admin) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.DetailRe
 	return &v1.DetailRes{
 		ObjectItem: toAdminItem(*o), Bucket: o.Bucket, ObjectKey: o.ObjectKey,
 	}, nil
+}
+
+func (c *Admin) Upload(ctx context.Context, req *v1.UploadReq) (res *v1.UploadRes, err error) {
+	r := g.RequestFromCtx(ctx)
+	up := r.GetUploadFile("file")
+	if up == nil {
+		return nil, gerror.NewCode(errcode.CodeBadRequest, "请上传 file 字段")
+	}
+	f, err := up.Open()
+	if err != nil {
+		return nil, gerror.Wrap(err, "打开上传文件失败")
+	}
+	defer f.Close()
+	size := up.Size
+	ctype := up.Header.Get("Content-Type")
+	out, err := c.svc.UploadDirect(ctx, service.UploadDirectInput{
+		AppKey: req.AppKey, SiteCode: req.SiteCode, Biz: req.Biz,
+		Filename: up.Filename, ContentType: ctype, SizeBytes: size,
+		Remark: req.Remark, Body: f,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out.Filename = up.Filename
+	return out, nil
 }
 
 func (c *Admin) Confirm(ctx context.Context, req *v1.ConfirmReq) (res *v1.ConfirmRes, err error) {

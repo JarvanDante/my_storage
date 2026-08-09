@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"io"
 
 	adminv1 "github.com/JarvanDante/my_storage/api/admin/object/v1"
 	"github.com/JarvanDante/my_storage/internal/modules/object/domain"
@@ -28,10 +29,22 @@ type CreateResult struct {
 	ContentType string
 }
 
+type UploadDirectInput struct {
+	AppKey      string
+	SiteCode    string
+	Biz         string
+	Filename    string
+	ContentType string
+	SizeBytes   int64
+	Remark      string
+	Body        io.Reader
+}
+
 type Object interface {
 	List(ctx context.Context, f domain.ListFilter) ([]domain.Object, int, error)
 	Get(ctx context.Context, code string) (*domain.Object, error)
 	Create(ctx context.Context, in CreateInput) (*CreateResult, error)
+	UploadDirect(ctx context.Context, in UploadDirectInput) (*adminv1.UploadRes, error)
 	Confirm(ctx context.Context, code string) (*adminv1.ConfirmRes, error)
 	DownloadURL(ctx context.Context, code string) (*adminv1.DownloadURLRes, error)
 	Delete(ctx context.Context, code string) error

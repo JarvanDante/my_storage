@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"time"
@@ -13,7 +14,8 @@ import (
 )
 
 type Minio struct {
-	client     *miniogo.Client
+	client     *miniogo.Client // 服务端读写（Docker 内多为 host.docker.internal）
+	presign    *miniogo.Client // 仅用于预签名，endpoint 必须与浏览器访问 Host 一致
 	endpoint   string
 	bucket     string
 	useSSL     bool
@@ -32,16 +34,46 @@ func NewMinio(ctx context.Context) (*Minio, error) {
 	if expireSec <= 0 {
 		expireSec = 7200
 	}
+
+	// Region 固定可跳过 GetBucketLocation；Docker 内预签名 client 指向 127.0.0.1 时不能再去拨号探活
+	region := g.Cfg().MustGet(ctx, "minio.region", "us-east-1").String()
+	if region == "" {
+		region = "us-east-1"
+	}
+
 	cli, err := miniogo.New(endpoint, &miniogo.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: useSSL,
+		Region: region,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("minio new: %w", err)
 	}
+
+	// 预签名按浏览器实际访问的 Host 计算，禁止签完再改 Host（会 SignatureDoesNotMatch）
+	presignEndpoint := endpoint
+	presignSSL := useSSL
+	if publicBase != "" {
+		if u, err := url.Parse(publicBase); err == nil && u.Host != "" {
+			presignEndpoint = u.Host
+			presignSSL = strings.EqualFold(u.Scheme, "https")
+		}
+	}
+	presignCli := cli
+	if presignEndpoint != endpoint || presignSSL != useSSL {
+		presignCli, err = miniogo.New(presignEndpoint, &miniogo.Options{
+			Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+			Secure: presignSSL,
+			Region: region,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("minio presign client: %w", err)
+		}
+	}
+
 	m := &Minio{
-		client: cli, endpoint: endpoint, bucket: bucket, useSSL: useSSL,
-		publicBase: publicBase, expire: time.Duration(expireSec) * time.Second,
+		client: cli, presign: presignCli, endpoint: endpoint, bucket: bucket,
+		useSSL: useSSL, publicBase: publicBase, expire: time.Duration(expireSec) * time.Second,
 	}
 	if err := m.EnsureBucket(ctx, bucket); err != nil {
 		g.Log().Warningf(ctx, "minio ensure bucket: %v", err)
@@ -65,46 +97,31 @@ func (m *Minio) EnsureBucket(ctx context.Context, bucket string) error {
 	return m.client.MakeBucket(ctx, bucket, miniogo.MakeBucketOptions{})
 }
 
-func (m *Minio) rewriteURL(raw string) string {
-	if m.publicBase == "" {
-		return raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	b, err := url.Parse(m.publicBase)
-	if err != nil || b.Host == "" {
-		return raw
-	}
-	u.Scheme = b.Scheme
-	u.Host = b.Host
-	return u.String()
-}
-
-func (m *Minio) PresignPut(ctx context.Context, bucket, key string) (string, error) {
+// PresignPut 浏览器直传用。勿带未签名的 Content-Type（前端请用 ArrayBuffer body）。
+func (m *Minio) PresignPut(ctx context.Context, bucket, key, contentType string) (string, error) {
+	_ = contentType
 	if bucket == "" {
 		bucket = m.bucket
 	}
 	if err := m.EnsureBucket(ctx, bucket); err != nil {
 		return "", err
 	}
-	u, err := m.client.PresignedPutObject(ctx, bucket, key, m.expire)
+	u, err := m.presign.PresignedPutObject(ctx, bucket, key, m.expire)
 	if err != nil {
 		return "", err
 	}
-	return m.rewriteURL(u.String()), nil
+	return u.String(), nil
 }
 
 func (m *Minio) PresignGet(ctx context.Context, bucket, key string) (string, error) {
 	if bucket == "" {
 		bucket = m.bucket
 	}
-	u, err := m.client.PresignedGetObject(ctx, bucket, key, m.expire, nil)
+	u, err := m.presign.PresignedGetObject(ctx, bucket, key, m.expire, nil)
 	if err != nil {
 		return "", err
 	}
-	return m.rewriteURL(u.String()), nil
+	return u.String(), nil
 }
 
 func (m *Minio) Stat(ctx context.Context, bucket, key string) (int64, string, error) {
@@ -150,6 +167,21 @@ func (m *Minio) PublicURL(bucket, key string) string {
 		return base + "/" + key
 	}
 	return fmt.Sprintf("%s/%s/%s", base, bucket, key)
+}
+
+func (m *Minio) PutObject(ctx context.Context, bucket, key, contentType string, r io.Reader, size int64) error {
+	if bucket == "" {
+		bucket = m.bucket
+	}
+	if err := m.EnsureBucket(ctx, bucket); err != nil {
+		return err
+	}
+	opts := miniogo.PutObjectOptions{}
+	if contentType != "" {
+		opts.ContentType = contentType
+	}
+	_, err := m.client.PutObject(ctx, bucket, key, r, size, opts)
+	return err
 }
 
 func (m *Minio) ExpireSec() int {

@@ -66,7 +66,7 @@ func (s *sObject) Create(ctx context.Context, in service.CreateInput) (*service.
 	if err != nil {
 		return nil, err
 	}
-	uploadURL, err := s.store.PresignPut(ctx, bucket, obj.ObjectKey)
+	uploadURL, err := s.store.PresignPut(ctx, bucket, obj.ObjectKey, in.ContentType)
 	if err != nil {
 		return nil, gerror.Wrap(err, "生成预签名失败")
 	}
@@ -75,6 +75,35 @@ func (s *sObject) Create(ctx context.Context, in service.CreateInput) (*service.
 		Id: obj.Code, UploadUrl: uploadURL, Method: "PUT", Bucket: bucket,
 		Key: obj.ObjectKey, ExpireSec: s.store.ExpireSec(), PublicUrl: publicURL,
 		ContentType: in.ContentType,
+	}, nil
+}
+
+func (s *sObject) UploadDirect(ctx context.Context, in service.UploadDirectInput) (*adminv1.UploadRes, error) {
+	if s.store == nil {
+		return nil, gerror.NewCode(errcode.CodeBadRequest, "MinIO 未初始化")
+	}
+	if in.Body == nil {
+		return nil, gerror.NewCode(errcode.CodeBadRequest, "文件不能为空")
+	}
+	created, err := s.Create(ctx, service.CreateInput{
+		AppKey: in.AppKey, SiteCode: in.SiteCode, Biz: in.Biz,
+		Filename: in.Filename, ContentType: in.ContentType,
+		SizeBytes: in.SizeBytes, Remark: in.Remark,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.store.PutObject(ctx, created.Bucket, created.Key, created.ContentType, in.Body, in.SizeBytes); err != nil {
+		_ = s.repo.SoftDelete(ctx, created.Id)
+		return nil, gerror.Wrap(err, "写入对象存储失败")
+	}
+	confirmed, err := s.Confirm(ctx, created.Id)
+	if err != nil {
+		return nil, err
+	}
+	return &adminv1.UploadRes{
+		Id: confirmed.Id, Status: confirmed.Status, SizeBytes: confirmed.SizeBytes,
+		PublicUrl: confirmed.PublicUrl, Filename: in.Filename,
 	}, nil
 }
 
