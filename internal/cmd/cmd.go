@@ -8,6 +8,7 @@ import (
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gcmd"
 
+	"github.com/JarvanDante/my_storage/internal/boot"
 	"github.com/JarvanDante/my_storage/internal/dao"
 	"github.com/JarvanDante/my_storage/internal/modules/client"
 	"github.com/JarvanDante/my_storage/internal/modules/health"
@@ -22,6 +23,7 @@ var Main = gcmd.Command{
 	Name:  "storageapi",
 	Brief: "统一存储(PaaS) API",
 	Func: func(ctx context.Context, parser *gcmd.Parser) error {
+		boot.InitNacosConfig(ctx)
 		store, err := storage.NewMinio(ctx)
 		if err != nil {
 			g.Log().Warningf(ctx, "minio init failed: %v (upload/download 将不可用)", err)
