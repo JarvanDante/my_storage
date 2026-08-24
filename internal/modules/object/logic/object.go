@@ -18,6 +18,7 @@ import (
 )
 
 var safeSegment = regexp.MustCompile(`[^a-zA-Z0-9._\-]+`)
+var safeFilename = regexp.MustCompile(`[^\p{L}\p{N}._\-]+`)
 
 type sObject struct {
 	repo  domain.Repository
@@ -247,14 +248,23 @@ func sanitizeFilename(name string) string {
 	name = filepath.Base(strings.TrimSpace(name))
 	name = strings.ReplaceAll(name, "\\", "")
 	name = strings.ReplaceAll(name, "/", "")
-	name = safeSegment.ReplaceAllString(name, "_")
-	name = strings.Trim(name, "._")
-	if name == "" {
-		return "file.bin"
+	ext := strings.ToLower(filepath.Ext(name))
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	base = safeFilename.ReplaceAllString(base, "_")
+	base = strings.Trim(base, "._")
+	if ext != "" {
+		ext = "." + strings.Trim(strings.TrimPrefix(ext, "."), "._")
 	}
+	if base == "" {
+		base = "file"
+	}
+	if ext == "" {
+		ext = ".bin"
+	}
+	name = base + ext
 	if len(name) > 200 {
-		ext := filepath.Ext(name)
-		base := strings.TrimSuffix(name, ext)
+		ext = filepath.Ext(name)
+		base = strings.TrimSuffix(name, ext)
 		if len(base) > 180 {
 			base = base[:180]
 		}
